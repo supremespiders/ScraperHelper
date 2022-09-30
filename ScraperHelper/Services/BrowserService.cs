@@ -12,9 +12,13 @@ public class BrowserService
     private IPage _page;
     private readonly string _path = AppDomain.CurrentDomain.BaseDirectory;
     private IKeyboardMouseEvents m_GlobalHook;
-    public  EventHandler<string> OnXpathChanged { get; set; }
+    public EventHandler<string> OnXpathChanged { get; set; }
+    public string SearchTerm;
     private string _lastXpath { get; set; }
-    
+    private HashSet<string> _ressourceTypes = new HashSet<string>();
+    private List<string> _allowedTypes = new() { "document", "fetch", "xhr" };
+    public EventHandler<IRequest> OnRequestCaptured { get; set; }
+
     public async Task StartBrowser(bool headless,string url)
     {
         Notifier.Display("Starting browser");
@@ -29,11 +33,35 @@ public class BrowserService
       //  var context = await _browser.NewContextAsync();
         _page = _browser.Pages[0];
         Notifier.Display("browser started");
+        _page.Response += OnPageOnResponse;
         await _page.GotoAsync(url);
-        if(m_GlobalHook==null)
-            Subscribe();
     }
-    
+    private async void OnPageOnResponse(object _, IResponse response)
+    {
+        if (string.IsNullOrEmpty(SearchTerm)) return;
+        if (!_allowedTypes.Contains(response.Request.ResourceType)) return;
+        Debug.WriteLine("<< " + response.Status + " " + response.Url+" ");
+        if (!response.Ok) return;
+        try
+        {
+            var body = await response.TextAsync();
+            if (body.Contains(SearchTerm))
+            {
+                OnRequestCaptured?.Invoke(this,response.Request);
+                Debug.WriteLine("good");
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.WriteLine(e.ToString());
+        }
+    }
+
+    private void OnPageOnRequest(object _, IRequest request)
+    {
+        Debug.WriteLine(">> " + request.Method + " " + request.Url);
+    }
+
     public async Task Attach()
     {
         Notifier.Display("attaching to browser");
@@ -42,8 +70,6 @@ public class BrowserService
         _browser = b.Contexts[0];
         _page = _browser.Pages[0];
         Notifier.Display("Attached");
-        if(m_GlobalHook==null)
-            Subscribe();
     }
     
     public async Task Dispose()
@@ -60,8 +86,9 @@ public class BrowserService
         m_GlobalHook.Dispose();
     }
 
-    private void Subscribe()
+    public void Subscribe()
     {
+        if (m_GlobalHook != null) return;
         // Note: for the application hook, use the Hook.AppEvents() instead
         m_GlobalHook = Hook.GlobalEvents();
         m_GlobalHook.MouseDownExt += GlobalHookMouseDownExt;

@@ -1,3 +1,4 @@
+using Microsoft.Playwright;
 using ScraperHelper.Extensions;
 using ScraperHelper.Models;
 using ScraperHelper.Services;
@@ -49,7 +50,17 @@ namespace ScraperHelper
             AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
             Notifier.OnDisplay += OnDisplay;
             _browserService.OnXpathChanged += OnXpathChanged;
+            _browserService.OnRequestCaptured += OnRequestCaptured;
             LoadConfig();
+            _browserService.SearchTerm=searchTermT.Text;
+        }
+
+        private void OnRequestCaptured(object sender, IRequest e)
+        {
+            Invoke((MethodInvoker)delegate
+            {
+                requestsGrid.Rows.Add(e.Method, e.Url, e.ResourceType);
+            });
         }
 
         private void OnXpathChanged(object sender, string e)
@@ -74,7 +85,9 @@ namespace ScraperHelper
         {
             var config = new Config()
             {
-                Url = urlT.Text
+                Url = urlT.Text,
+                Xpath = xpathT.Text,
+                SearchTerm = searchTermT.Text
             };
             config.Save();
             Display("Saved!");
@@ -85,6 +98,8 @@ namespace ScraperHelper
             var config = new Config().Load();
             if (config == null) return;
             urlT.Text = config.Url;
+            xpathT.Text=config.Xpath;
+            searchTermT.Text=config.SearchTerm;
         }
 
         private async void Form1_FormClosing(object sender, FormClosingEventArgs e)
@@ -95,11 +110,18 @@ namespace ScraperHelper
         private void saveButton_Click(object sender, EventArgs e)
         {
             SaveConfig();
+            _browserService.SearchTerm=searchTermT.Text;
         }
 
         private void optimizeButton_Click(object sender, EventArgs e)
         {
 
+        }
+
+        private void startListeningButton_Click(object sender, EventArgs e)
+        {
+            _browserService.Subscribe();
+            Display("Listening to mouse click , shift + click to capture xpath");
         }
     }
 }
