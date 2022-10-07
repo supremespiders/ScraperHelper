@@ -1,5 +1,7 @@
 ﻿using System.Text;
 using Microsoft.Playwright;
+using Newtonsoft.Json;
+using ScraperHelper.Extensions;
 
 namespace ScraperHelper.Models;
 
@@ -13,10 +15,24 @@ public class Request
     public Dictionary<string,string> FormData { get; set; }
     public string FormBody { get; set; }
 
-    public Request()
+    public bool ContainKeyword(string text)
     {
-    }
+        var t = JsonConvert.SerializeObject(Headers);
+        var t2 = JsonConvert.SerializeObject(Cookies);
+        if (FormBody != null)
+        {
+            var t3 = JsonConvert.SerializeObject(FormBody);
+            if (t3.Contains(text)) return true;
+        }
+        if (t.Contains(text) || t2.Contains(text))
+        {
+            return true;
+        }
 
+        if (FormBody != null && FormBody.Contains(text)) return true;
+
+        return false;
+    }
     public string GetCookieString()
     {
         if (Cookies == null) return "";
@@ -25,26 +41,43 @@ public class Request
         return c.ToString();
     }
 
-    public Request(IRequest req)
+    public string GenerateCode()
     {
-        Method = req.Method.ToLower() == "get" ? Method.Get : Method.Post;
-        Url = req.Url;
-        ResourceType = req.ResourceType;
-        var headers = new Dictionary<string, string>();
-        var cookies = new Dictionary<string, string>();
-        var allHeaders = req.AllHeadersAsync().Result;
-        foreach (var reqHeader in allHeaders)
+        var sb = new StringBuilder();
+        var cookies = GetCookieString();
+        var headers = Headers;
+        if (cookies!="")
+            headers.Add("cookie", cookies);
+
+        
+        sb.AppendLine($"var request = new HttpRequestMessage({(Method==Method.Get ? "HttpMethod.Get" : "HttpMethod.Post")},\"{Url}\");");
+
+        foreach (var header in headers.Where(header => !header.Key.Equals("content-type")))
+            sb.AppendLine($"request.Headers.Add(\"{header.Key}\",\"{header.Value.EscapeDoubleQuote()}\");");
+
+        if (headers.ContainsKey("content-type") && headers["content-type"] == "application/x-www-form-urlencoded")
         {
-            if (reqHeader.Key.ToLower() == "cookie")
-            {
-                cookies = reqHeader.Value.Split(';').ToDictionary(x => x.Split('=')[0].Trim(), y => y.Split("=")[1].Trim());
-                continue;
-            }
-            if(reqHeader.Key.StartsWith(":"))continue;
-            headers.Add(reqHeader.Key,reqHeader.Value);
+            sb.AppendLine($"var dic= new Dictionary<string, string>();");
+            foreach (var d in FormData) 
+                sb.AppendLine($"dic.Add(\"{d.Key}\",\"{d.Value.EscapeDoubleQuote()}\");");
         }
-        Headers = headers;
-        Cookies = cookies;
+
+        if (headers.ContainsKey("content-type"))
+            switch (headers["content-type"])
+            {
+                case "application/x-www-form-urlencoded":
+                    sb.AppendLine($"request.Content = new FormUrlEncodedContent(dic.ToList());");
+                    break;
+                case "application/json":
+                case "application/json;charset=UTF-8":
+                    sb.AppendLine($"request.Content = new StringContent(\"{FormBody}\", Encoding.UTF8, \"application/json\");");
+                    break;
+            }
+        
+        sb.AppendLine("var response = await _client.SendAsync(request);");
+        sb.AppendLine("var bytes = await response.Content.ReadAsByteArrayAsync();");
+        sb.AppendLine("var html = Encoding.UTF8.GetString(bytes);");
+        return sb.ToString();
     }
 }
 

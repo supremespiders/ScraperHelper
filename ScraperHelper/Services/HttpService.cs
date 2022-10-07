@@ -7,7 +7,11 @@ namespace ScraperHelper.Services;
 
 public class HttpService
 {
-    private readonly HttpClient _client = new(new HttpClientHandler { AutomaticDecompression = DecompressionMethods.All });
+    private readonly HttpClient _client = new(new HttpClientHandler
+    {
+        UseCookies = false,
+        AutomaticDecompression = DecompressionMethods.All
+    });
 
     public async Task<Request> Optimize(Request baseRequest, string searchTerm)
     {
@@ -51,16 +55,24 @@ public class HttpService
     private async Task<bool> IsRequestSuccess(Request request, string searchTerm)
     {
         var resp = await Execute(request);
-        return resp.Contains(searchTerm);
+        return resp.body.Contains(searchTerm);
     }
     
-    public async Task<string> Execute(Request request)
+    public async Task<(string body,Dictionary<string,string> headers)> Execute(Request request)
     {
         var r = new HttpRequestMessage(request.Method==Method.Get ? HttpMethod.Get : HttpMethod.Post, request.Url);
         foreach (var header in request.Headers)
         {
             if (header.Key.Equals("content-type")) continue;
-            r.Headers.Add(header.Key, header.Value);
+            try
+            {
+                r.Headers.Add(header.Key, header.Value);
+            }
+            catch (Exception e)
+            {
+                MessageBox.Show($"Couldn't add header : {header.Key} : {header.Value} : {e.Message}");
+                throw;
+            }
         }
 
         var c = request.GetCookieString();
@@ -77,6 +89,11 @@ public class HttpService
             };
         var s = await _client.SendAsync(r);
         var m = await s.Content.ReadAsByteArrayAsync();
-        return (Encoding.UTF8.GetString(m));
+        var headers = new Dictionary<string, string>();
+        foreach (var h in s.Headers)
+        {
+            headers.Add(h.Key,string.Join(" ",h.Value));
+        }
+        return ((Encoding.UTF8.GetString(m)),headers);
     }
 }

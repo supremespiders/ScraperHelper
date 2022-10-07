@@ -1,7 +1,9 @@
 ﻿using System.Diagnostics;
 using Gma.System.MouseKeyHook;
 using Microsoft.Playwright;
+using Newtonsoft.Json;
 using ScraperHelper.Extensions;
+using ScraperHelper.Models;
 
 namespace ScraperHelper.Services;
 
@@ -15,10 +17,10 @@ public class BrowserService
     public EventHandler<string> OnXpathChanged { get; set; }
     public string SearchTerm;
     private string _lastXpath { get; set; }
-    private HashSet<string> _ressourceTypes = new HashSet<string>();
-    private List<string> _allowedTypes = new() { "document", "fetch", "xhr" };
-    private Dictionary<string, IRequest> _allRequests = new Dictionary<string, IRequest>();
-    public EventHandler<IRequest> OnRequestCaptured { get; set; }
+    private readonly List<string> _allowedTypes = new() { "document", "fetch", "xhr" };
+    public List<Response> AllRequests = new();
+    public bool CaptureAll { get; set; }
+    public EventHandler<Response> OnRequestCaptured { get; set; }
 
     public async Task StartBrowser(bool headless, string url)
     {
@@ -39,20 +41,55 @@ public class BrowserService
         await _page.GotoAsync(url);
     }
 
+    public async Task GetNeededRequests(string text)
+    {
+        foreach (var resp in AllRequests)
+        {
+            var t = JsonConvert.SerializeObject(resp.Headers);
+            var t2 = JsonConvert.SerializeObject(resp.Cookies);
+            if (t.Contains(text) || t2.Contains(text) || resp.Content.Contains(text))
+            {
+                OnRequestCaptured?.Invoke(this, resp);
+            }
+        }
+    }
+    
+    public void StartNewCapture()
+    {
+        AllRequests = new List<Response>();
+        AllRequests.Save();
+    }
+
     private async void OnPageOnResponse(object _, IResponse response)
     {
-        if (string.IsNullOrEmpty(SearchTerm)) return;
+        if (string.IsNullOrEmpty(SearchTerm) && !CaptureAll) return;
         if (!_allowedTypes.Contains(response.Request.ResourceType)) return;
         Debug.WriteLine("<< " + response.Status + " " + response.Url + " ");
-        if (!response.Ok) return;
+        // if (!response.Request.Url.EndsWith("search")) return;
+        //     Debug.WriteLine("");
+        if (!response.Ok && response.Status!=301 && response.Status!=302) 
+            return;
+        var resp = await response.Convert();
+        AllRequests.Add(resp);
+        // if (CaptureAll)
+        // {
+        //     OnRequestCaptured?.Invoke(this, resp);
+        //     return;
+        // }
         try
         {
-            var body = await response.TextAsync();
-            if (body.Contains(SearchTerm))
+            var y = JsonConvert.SerializeObject(resp.Request);
+            if (y.Contains(SearchTerm))
             {
-                OnRequestCaptured?.Invoke(this, response.Request);
-                Debug.WriteLine("good");
+                OnRequestCaptured?.Invoke(this, resp);
+                return;
             }
+            if (resp.Content.Contains(SearchTerm))
+            {
+                OnRequestCaptured?.Invoke(this, resp);
+                return;
+            }
+            OnRequestCaptured?.Invoke(this, resp);
         }
         catch (Exception e)
         {
@@ -102,6 +139,34 @@ public class BrowserService
         // Note: for the application hook, use the Hook.AppEvents() instead
         m_GlobalHook = Hook.GlobalEvents();
         m_GlobalHook.MouseDownExt += GlobalHookMouseDownExt;
+    }
+
+    public void LoadRequests()
+    {
+        AllRequests=AllRequests.Load();
+    }
+    public void SaveRequests()
+    {
+        AllRequests.Save();
+    }
+
+    public List<Request> SearchRequests(string text)
+    {
+        var requests = new List<Request>();
+        foreach (var resp in AllRequests)
+        {
+            if (resp.ContainKeyword(text) || resp.Request.ContainKeyword(text))
+            {
+               requests.Add(resp.Request);
+            }
+        }
+
+        return requests;
+    }
+
+    public async Task SetHtml(string html)
+    {
+        await _page.SetContentAsync(html);
     }
 
     private async void GlobalHookMouseDownExt(object sender, MouseEventExtArgs e)

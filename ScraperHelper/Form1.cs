@@ -1,6 +1,9 @@
 using System.Diagnostics;
+using System.Net;
 using System.Text;
 using Microsoft.Playwright;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using ScraperHelper.Extensions;
 using ScraperHelper.Models;
 using ScraperHelper.Services;
@@ -56,16 +59,22 @@ namespace ScraperHelper
             _browserService.OnXpathChanged += OnXpathChanged;
             _browserService.OnRequestCaptured += OnRequestCaptured;
             LoadConfig();
-            _browserService.SearchTerm = searchTermT.Text;
+            _browserService.SearchTerm = localSearchTermT.Text;
         }
 
-        private void OnRequestCaptured(object sender, IRequest e)
+        private async void OnRequestCaptured(object sender, Response response)
         {
-            Invoke((MethodInvoker)delegate
+            Invoke((MethodInvoker)async delegate
             {
-                var req = new Request(e);
-                requestsGrid.Rows.Add(req.Method, req.Url, req.ResourceType, req);
-                SaveConfig();
+                try
+                {
+                    requestsGrid.Rows.Add(response.Request.Method, response.Request.Url, response.Request.ResourceType, response);
+                    SaveConfig();
+                }
+                catch (Exception exception)
+                {
+                    Debug.WriteLine(exception);
+                }
             });
         }
 
@@ -86,19 +95,19 @@ namespace ScraperHelper
 
         void SaveConfig()
         {
-            var targetedRequests = requestsGrid.Rows.Cast<DataGridViewRow>()
-                .Select(row => (Request)row.Cells[3].Value).ToList();
 
             var req = GetRequestFromUi();
             var config = new Config()
             {
                 Url = urlT.Text,
                 Xpath = xpathT.Text,
-                SearchTerm = searchTermT.Text,
-                TargetedRequests = targetedRequests,
-                RequestInDebug = req
+                SearchTerm = localSearchTermT.Text,
+                RequestInDebug = req,
+                Result = resultT.Text,
+                LocalSearchTerm = localSearchTermT.Text
             };
             config.Save();
+            _browserService.SaveRequests();
             Display("Saved!");
         }
 
@@ -108,11 +117,22 @@ namespace ScraperHelper
             if (config == null) return;
             urlT.Text = config.Url;
             xpathT.Text = config.Xpath;
-            searchTermT.Text = config.SearchTerm;
-            if (config.TargetedRequests != null)
-                foreach (var r in config.TargetedRequests)
-                    requestsGrid.Rows.Add(r.Method, r.Url, r.ResourceType, r);
+            localSearchTermT.Text = config.SearchTerm;
+            localSearchTermT.Text = config.LocalSearchTerm;
+           
             SetReqOnUI(config.RequestInDebug);
+            _browserService.LoadRequests();
+            PopulateRequestsGrid();
+        }
+
+        void PopulateRequestsGrid()
+        {
+            // if (config.TargetedRequests != null)
+            //     foreach (var r in config.TargetedRequests)
+            //         requestsGrid.Rows.Add(r.Method, r.Url, r.ResourceType, r);
+            var requests = _browserService.AllRequests;
+            foreach (var r in requests)
+                    requestsGrid.Rows.Add(r.Request.Method, r.Request.Url, r.Request.ResourceType, r);
         }
 
         private async void Form1_FormClosing(object sender, FormClosingEventArgs e)
@@ -123,7 +143,7 @@ namespace ScraperHelper
         private void saveButton_Click(object sender, EventArgs e)
         {
             SaveConfig();
-            _browserService.SearchTerm = searchTermT.Text;
+            _browserService.SearchTerm = localSearchTermT.Text;
         }
 
         private void optimizeButton_Click(object sender, EventArgs e)
@@ -145,9 +165,9 @@ namespace ScraperHelper
         private void checkToolStripMenuItem_Click(object sender, EventArgs e)
         {
             if (requestsGrid.SelectedRows.Count < 1) return;
-            var req =(Request)requestsGrid.SelectedRows[0].Cells[3].Value;
-            _requestOnDebug = req;
-            SetReqOnUI(req);
+            var response = (Response)requestsGrid.SelectedRows[0].Cells[3].Value;
+            _requestOnDebug = response.Request;
+            SetResponseOnUI(response);
             SaveConfig();
         }
 
@@ -160,8 +180,35 @@ namespace ScraperHelper
             foreach (var reqHeader in req.Headers) headers.AppendLine($"{reqHeader.Key} : {reqHeader.Value}");
             var cookies = new StringBuilder();
             foreach (var c in req.Cookies) cookies.AppendLine($"{c.Key} : {c.Value}");
+            var formData = new StringBuilder();
+            if (req.FormData != null) foreach (var f in req.FormData) formData.AppendLine($"{f.Key} : {f.Value}");
             headersT.Text = headers.ToString();
             cookiesT.Text = cookies.ToString();
+            formDataT.Text = formData.ToString();
+            if (!string.IsNullOrEmpty(req.FormBody))
+                formDataT.Text = req.FormBody;
+            tabControl1.SelectedIndex = 1;
+        }
+        private void SetResponseOnUI(Response response)
+        {
+            var req = response.Request;
+            if (req == null) return;
+            reqUrlT.Text = req.Url;
+            httpMethodT.Text = req.Method == Method.Get ? "GET" : "POST";
+            var headers = new StringBuilder();
+            foreach (var reqHeader in req.Headers) headers.AppendLine($"{reqHeader.Key} : {reqHeader.Value}");
+            var cookies = new StringBuilder();
+            foreach (var c in req.Cookies) cookies.AppendLine($"{c.Key} : {c.Value}");
+            var formData = new StringBuilder();
+            if (req.FormData != null) foreach (var f in req.FormData) formData.AppendLine($"{f.Key} : {f.Value}");
+            headersT.Text = headers.ToString();
+            cookiesT.Text = cookies.ToString();
+            formDataT.Text = formData.ToString();
+            if (!string.IsNullOrEmpty(req.FormBody))
+                formDataT.Text = req.FormBody;
+            resultT.Text = response.Content;
+            resultHeadersT.Text = response.Headers.DictionaryToText();
+            SearchRequestsForKeyword();
             tabControl1.SelectedIndex = 1;
         }
 
@@ -172,20 +219,36 @@ namespace ScraperHelper
             {
                 headers = headersT.Text.ParseHeader();
             }
+
             var cookies = new Dictionary<string, string>();
             if (cookiesT.Text != "")
                 cookies = cookiesT.Text.ParseHeader();
+
+            string reqBody = null;
+            Dictionary<string, string> formData = null;
+            if (headers.ContainsKey("content-type"))
+                switch (headers["content-type"])
+                {
+                    case "application/x-www-form-urlencoded":
+                        formData = formDataT.Text.ParseHeader();
+                        break;
+                    case "application/json":
+                        reqBody = formDataT.Text;
+                        break;
+                }
+
             var request = new Request
             {
                 Method = httpMethodT.SelectedIndex == 0 ? Method.Get : Method.Post,
-                Url = urlT.Text,
+                Url = reqUrlT.Text,
                 Headers = headers,
-                Cookies = cookies
+                Cookies = cookies,
+                FormBody = reqBody,
+                FormData = formData
             };
             return request;
         }
-
-
+        
         private async void execRequestButton_Click(object sender, EventArgs e)
         {
             Display("Requesting..");
@@ -193,8 +256,20 @@ namespace ScraperHelper
             try
             {
                 var req = GetRequestFromUi();
-                resultT.Text = await _httpService.Execute(req);
-                termExistL.Text = resultT.Text.Contains(searchTermT.Text) ? "Exist!" : "not there..";
+                var result = await _httpService.Execute(req);
+                resultT.Text = result.body;
+                resultHeadersT.Text = result.headers.DictionaryToText();
+               resultHeadersT.HighlightText(localSearchTermT.Text);
+                termExistL.Text = resultT.Text.Contains(localSearchTermT.Text) ? "Exist!" : "not there..";
+                try
+                {
+                    var obj = JToken.Parse(result.body);
+                   var s=JsonConvert.SerializeObject(obj, Formatting.Indented);
+                   resultT.Text = s;
+                }
+                catch (Exception)
+                {//
+                }
                 Display("completed");
             }
             catch (Exception exception)
@@ -206,19 +281,96 @@ namespace ScraperHelper
 
         private async void optimizeRequestButton_Click(object sender, EventArgs e)
         {
+            if (localSearchTermT.Text == "")
+            {
+                Display("you need to specify a search term to optimize");
+                return;
+            }
             Display("Start optimizing..");
             try
             {
                 var req = GetRequestFromUi();
-                var optimized = await _httpService.Optimize(req, searchTermT.Text);
+                var optimized = await _httpService.Optimize(req, localSearchTermT.Text);
                 SetReqOnUI(optimized);
                 Display("optimization completed");
             }
             catch (Exception exception)
             {
-               Display($"Error : {exception.Message}");
+                Display($"Error : {exception.Message}");
             }
-            
         }
+
+        private void generateRequestCodeButton_Click(object sender, EventArgs e)
+        {
+            var req = GetRequestFromUi();
+            resultT.Text = req.GenerateCode();
+        }
+
+        private void decodeUrlButton_Click(object sender, EventArgs e)
+        {
+            reqUrlT.Text = WebUtility.UrlDecode(reqUrlT.Text);
+        }
+
+        private async void openOnBrowserButton_Click(object sender, EventArgs e)
+        {
+            // await _browserService.SetHtml(resultT.Text);
+            await File.WriteAllTextAsync("html.html",resultT.Text);
+            var psi = new ProcessStartInfo
+            {
+                FileName = "html.html",
+                UseShellExecute = true
+            };
+            Process.Start(psi);
+        }
+
+        private async void getNeededRequestsButton_Click(object sender, EventArgs e)
+        {
+            var search = Clipboard.GetText();
+            if (string.IsNullOrEmpty(search)) return;
+            await _browserService.GetNeededRequests(search);
+        }
+
+        private void startNewCaptureButton_Click(object sender, EventArgs e)
+        {
+            requestsGrid.Rows.Clear();
+            SaveConfig();
+            _browserService.StartNewCapture();
+        }
+
+        private void addToFinalRequestsButton_Click(object sender, EventArgs e)
+        {
+
+        }
+
+        private void searchRequestsButton_Click(object sender, EventArgs e)
+        {
+            SearchRequestsForKeyword();
+        }
+
+        private void SearchRequestsForKeyword()
+        {
+            if (localSearchTermT.Text == "") return;
+            foreach (DataGridViewRow r in requestsGrid.Rows)
+            {
+                var response = (Response)r.Cells[3].Value;
+                if (response.ContainKeyword(localSearchTermT.Text))
+                {
+                    r.DefaultCellStyle.BackColor=Color.Green;
+                }else if (response.Request.ContainKeyword(localSearchTermT.Text))
+                {
+                    r.DefaultCellStyle.BackColor=Color.Yellow;
+                }
+                else
+                {
+                    r.DefaultCellStyle.BackColor=Color.White;
+                }
+            }
+            resultHeadersT.HighlightText(localSearchTermT.Text);
+            resultT.HighlightText(localSearchTermT.Text);
+            headersT.HighlightText(localSearchTermT.Text);
+            formDataT.HighlightText(localSearchTermT.Text);
+            cookiesT.HighlightText(localSearchTermT.Text);
+        }
+
     }
 }
