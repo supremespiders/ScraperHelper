@@ -14,12 +14,14 @@ public class BrowserService
     private IPage _page;
     private readonly string _path = AppDomain.CurrentDomain.BaseDirectory;
     private IKeyboardMouseEvents m_GlobalHook;
+    public Config Config;
     public EventHandler<string> OnXpathChanged { get; set; }
     public string SearchTerm;
     private string _lastXpath { get; set; }
     private readonly List<string> _allowedTypes = new() { "document", "fetch", "xhr" };
     public List<Response> AllRequests = new();
     public bool CaptureAll { get; set; }
+    public bool CaptureRequestsEnabled;
     public EventHandler<Response> OnRequestCaptured { get; set; }
 
     public async Task StartBrowser(bool headless, string url)
@@ -58,12 +60,25 @@ public class BrowserService
     {
         AllRequests = new List<Response>();
         AllRequests.Save();
+        CaptureRequestsEnabled = true;
+    }
+
+    private bool IsSameDomain(string url)
+    {
+        var baseHost = Config.Url.ParseHost();
+        var thisHost = url.ParseHost();
+        if (baseHost.Length <= thisHost.Length && thisHost.Contains(baseHost)) return true;
+        if (baseHost.Length >= thisHost.Length && baseHost.Contains(thisHost)) return true;
+        return false;
     }
 
     private async void OnPageOnResponse(object _, IResponse response)
     {
+        if (!CaptureRequestsEnabled) return;
         if (string.IsNullOrEmpty(SearchTerm) && !CaptureAll) return;
         if (!_allowedTypes.Contains(response.Request.ResourceType)) return;
+        if (Config.SameDomain && !IsSameDomain(response.Url))
+            return;
         Debug.WriteLine("<< " + response.Status + " " + response.Url + " ");
         // if (!response.Request.Url.EndsWith("search")) return;
         //     Debug.WriteLine("");

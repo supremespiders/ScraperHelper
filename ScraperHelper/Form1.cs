@@ -60,6 +60,9 @@ namespace ScraperHelper
             _browserService.OnRequestCaptured += OnRequestCaptured;
             LoadConfig();
             _browserService.SearchTerm = localSearchTermT.Text;
+            tabControl1.SelectedIndex = 1;
+            // var t = "https://www.upwork.com/ab/messages/rooms/room_dca021eab02a97d4f52fffecb972b266?companyReference=424280317397024769&sidebar=true";
+            // var y = new Uri(t);
         }
 
         private async void OnRequestCaptured(object sender, Response response)
@@ -104,9 +107,11 @@ namespace ScraperHelper
                 SearchTerm = localSearchTermT.Text,
                 RequestInDebug = req,
                 Result = resultT.Text,
-                LocalSearchTerm = localSearchTermT.Text
+                LocalSearchTerm = localSearchTermT.Text,
+                SameDomain = sameDomainC.Checked
             };
             config.Save();
+            _browserService.Config = config;
             _browserService.SaveRequests();
             Display("Saved!");
         }
@@ -119,7 +124,8 @@ namespace ScraperHelper
             xpathT.Text = config.Xpath;
             localSearchTermT.Text = config.SearchTerm;
             localSearchTermT.Text = config.LocalSearchTerm;
-           
+            sameDomainC.Checked = config.SameDomain;
+            _browserService.Config = config;
             SetReqOnUI(config.RequestInDebug);
             _browserService.LoadRequests();
             PopulateRequestsGrid();
@@ -185,8 +191,8 @@ namespace ScraperHelper
             headersT.Text = headers.ToString();
             cookiesT.Text = cookies.ToString();
             formDataT.Text = formData.ToString();
-            if (!string.IsNullOrEmpty(req.FormBody))
-                formDataT.Text = req.FormBody;
+            if (!string.IsNullOrEmpty(req.FormBody)) 
+                formDataT.Text = req.FormBody.BeautifyIfJson();
             tabControl1.SelectedIndex = 1;
         }
         private void SetResponseOnUI(Response response)
@@ -205,8 +211,8 @@ namespace ScraperHelper
             cookiesT.Text = cookies.ToString();
             formDataT.Text = formData.ToString();
             if (!string.IsNullOrEmpty(req.FormBody))
-                formDataT.Text = req.FormBody;
-            resultT.Text = response.Content;
+                formDataT.Text = req.FormBody.BeautifyIfJson();
+            resultT.Text = response.Content.BeautifyIfJson();
             resultHeadersT.Text = response.Headers.DictionaryToText();
             SearchRequestsForKeyword();
             tabControl1.SelectedIndex = 1;
@@ -257,19 +263,13 @@ namespace ScraperHelper
             {
                 var req = GetRequestFromUi();
                 var result = await _httpService.Execute(req);
-                resultT.Text = result.body;
+                resultT.Text = result.body.BeautifyIfJson();
                 resultHeadersT.Text = result.headers.DictionaryToText();
-               resultHeadersT.HighlightText(localSearchTermT.Text);
+                var y=resultHeadersT.HighlightText(localSearchTermT.Text);
+                howManyInHeadersL.Text = y.ToString();
+                var x=resultT.HighlightText(localSearchTermT.Text);
+                howManyInBodyL.Text = x.ToString();
                 termExistL.Text = resultT.Text.Contains(localSearchTermT.Text) ? "Exist!" : "not there..";
-                try
-                {
-                    var obj = JToken.Parse(result.body);
-                   var s=JsonConvert.SerializeObject(obj, Formatting.Indented);
-                   resultT.Text = s;
-                }
-                catch (Exception)
-                {//
-                }
                 Display("completed");
             }
             catch (Exception exception)
@@ -362,15 +362,22 @@ namespace ScraperHelper
                 }
                 else
                 {
+                    r.Visible = !hideIrreleventReqCheckbox.Checked;
                     r.DefaultCellStyle.BackColor=Color.White;
                 }
             }
-            resultHeadersT.HighlightText(localSearchTermT.Text);
-            resultT.HighlightText(localSearchTermT.Text);
+            var y=resultHeadersT.HighlightText(localSearchTermT.Text);
+            howManyInHeadersL.Text = y.ToString();
+            var x=resultT.HighlightText(localSearchTermT.Text);
+            howManyInBodyL.Text = x.ToString();
             headersT.HighlightText(localSearchTermT.Text);
             formDataT.HighlightText(localSearchTermT.Text);
             cookiesT.HighlightText(localSearchTermT.Text);
         }
 
+        private void stopCaptureButton_Click(object sender, EventArgs e)
+        {
+            _browserService.CaptureRequestsEnabled = false;
+        }
     }
 }

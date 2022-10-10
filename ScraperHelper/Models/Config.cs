@@ -10,4 +10,5 @@ public class Config
     public string LocalSearchTerm { get; set; }
     public string Result { get; set; }
     public Request RequestInDebug { get; set; }
+    public bool SameDomain { get; set; }
 }
