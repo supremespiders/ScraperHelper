@@ -53,9 +53,10 @@ public static class UtilityExtensions
         var parts = s.Split("&");
         foreach (var part in parts)
         {
-            var p = part.Split("=");
-            var key = p[0];
-            var value = p[1];
+            var x1 = part.IndexOf("=", StringComparison.Ordinal);
+            if (x1 == -1) throw new KnownException($"No = in cookie");
+            var key = part[..x1];
+            var value = part[(x1 + 1)..];
             dic.Add(WebUtility.UrlDecode(key), WebUtility.UrlDecode(value));
         }
 
@@ -91,7 +92,7 @@ public static class UtilityExtensions
         {
             if (reqHeader.Key.ToLower() == "cookie")
             {
-                cookies = reqHeader.Value.Split(';').ToDictionary(x => x.Split('=')[0].Trim(), y => y.Split("=")[1].Trim());
+                cookies = reqHeader.Value.ParseCookies();
                 continue;
             }
 
@@ -124,9 +125,12 @@ public static class UtilityExtensions
         var cc = cookieString.Split(";");
         foreach (var c in cc)
         {
-            var b = c.Split("=");
-            if (!dc.ContainsKey(b[0]))
-                dc.Add(b[0], b[1]);
+            var x1 = c.IndexOf("=", StringComparison.Ordinal);
+            if (x1 == -1) throw new KnownException($"No = in cookie");
+            var key = c[..x1];
+            var value = c[(x1 + 1)..];
+            if (!dc.ContainsKey(key))
+                dc.Add(key, value);
         }
         return dc;
     }
