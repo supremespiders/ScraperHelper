@@ -379,5 +379,20 @@ namespace ScraperHelper
         {
             _browserService.CaptureRequestsEnabled = false;
         }
+
+        private void allRequestsToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+
+        }
+
+        private void myScenarioToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+
+        }
+
+        private void addToScenarioToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+
+        }
     }
 }

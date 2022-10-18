@@ -84,6 +84,9 @@
             this.dataGridViewTextBoxColumn4 = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.panel1 = new System.Windows.Forms.Panel();
             this.panel4 = new System.Windows.Forms.Panel();
+            this.allRequestsToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.myScenarioToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.addToScenarioToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.tabControl1.SuspendLayout();
             this.tabPage1.SuspendLayout();
             this.tabPage2.SuspendLayout();
@@ -277,21 +280,24 @@
             this.contextMenuStrip1.ImageScalingSize = new System.Drawing.Size(20, 20);
             this.contextMenuStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.clearToolStripMenuItem,
-            this.checkToolStripMenuItem});
+            this.checkToolStripMenuItem,
+            this.allRequestsToolStripMenuItem,
+            this.myScenarioToolStripMenuItem,
+            this.addToScenarioToolStripMenuItem});
             this.contextMenuStrip1.Name = "contextMenuStrip1";
-            this.contextMenuStrip1.Size = new System.Drawing.Size(118, 52);
+            this.contextMenuStrip1.Size = new System.Drawing.Size(211, 152);
             // 
             // clearToolStripMenuItem
             // 
             this.clearToolStripMenuItem.Name = "clearToolStripMenuItem";
-            this.clearToolStripMenuItem.Size = new System.Drawing.Size(117, 24);
+            this.clearToolStripMenuItem.Size = new System.Drawing.Size(210, 24);
             this.clearToolStripMenuItem.Text = "Clear";
             this.clearToolStripMenuItem.Click += new System.EventHandler(this.clearToolStripMenuItem_Click);
             // 
             // checkToolStripMenuItem
             // 
             this.checkToolStripMenuItem.Name = "checkToolStripMenuItem";
-            this.checkToolStripMenuItem.Size = new System.Drawing.Size(117, 24);
+            this.checkToolStripMenuItem.Size = new System.Drawing.Size(210, 24);
             this.checkToolStripMenuItem.Text = "Check";
             this.checkToolStripMenuItem.Click += new System.EventHandler(this.checkToolStripMenuItem_Click);
             // 
@@ -681,6 +687,27 @@
             this.panel4.Size = new System.Drawing.Size(1924, 907);
             this.panel4.TabIndex = 13;
             // 
+            // allRequestsToolStripMenuItem
+            // 
+            this.allRequestsToolStripMenuItem.Name = "allRequestsToolStripMenuItem";
+            this.allRequestsToolStripMenuItem.Size = new System.Drawing.Size(210, 24);
+            this.allRequestsToolStripMenuItem.Text = "All Requests";
+            this.allRequestsToolStripMenuItem.Click += new System.EventHandler(this.allRequestsToolStripMenuItem_Click);
+            // 
+            // myScenarioToolStripMenuItem
+            // 
+            this.myScenarioToolStripMenuItem.Name = "myScenarioToolStripMenuItem";
+            this.myScenarioToolStripMenuItem.Size = new System.Drawing.Size(210, 24);
+            this.myScenarioToolStripMenuItem.Text = "My Scenario";
+            this.myScenarioToolStripMenuItem.Click += new System.EventHandler(this.myScenarioToolStripMenuItem_Click);
+            // 
+            // addToScenarioToolStripMenuItem
+            // 
+            this.addToScenarioToolStripMenuItem.Name = "addToScenarioToolStripMenuItem";
+            this.addToScenarioToolStripMenuItem.Size = new System.Drawing.Size(210, 24);
+            this.addToScenarioToolStripMenuItem.Text = "Add To Scenario";
+            this.addToScenarioToolStripMenuItem.Click += new System.EventHandler(this.addToScenarioToolStripMenuItem_Click);
+            // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 20F);
@@ -767,5 +794,8 @@
         private Label howManyInBodyL;
         private Button stopCaptureButton;
         private CheckBox sameDomainC;
+        private ToolStripMenuItem allRequestsToolStripMenuItem;
+        private ToolStripMenuItem myScenarioToolStripMenuItem;
+        private ToolStripMenuItem addToScenarioToolStripMenuItem;
     }
 }
