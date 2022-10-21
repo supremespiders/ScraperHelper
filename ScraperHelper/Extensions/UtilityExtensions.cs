@@ -43,7 +43,8 @@ public static class UtilityExtensions
     public static T Load<T>(this T o) where T : class
     {
         if (!File.Exists(o.GetType().Name)) return null;
-        return JsonConvert.DeserializeObject<T>(File.ReadAllText(o.GetType().Name));
+        o = JsonConvert.DeserializeObject<T>(File.ReadAllText(o.GetType().Name));
+        return o;
     }
 
     public static Dictionary<string, string> FormUrlEncodedToDictionary(this string s)

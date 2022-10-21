@@ -15,6 +15,8 @@ namespace ScraperHelper
         private readonly BrowserService _browserService = new();
         private readonly HttpService _httpService = new();
         private Request _requestOnDebug;
+        
+        private readonly RequestsService _requestsService = new RequestsService();
 
         public Form1()
         {
@@ -98,7 +100,6 @@ namespace ScraperHelper
 
         void SaveConfig()
         {
-
             var req = GetRequestFromUi();
             var config = new Config()
             {
@@ -112,7 +113,7 @@ namespace ScraperHelper
             };
             config.Save();
             _browserService.Config = config;
-            _browserService.SaveRequests();
+            Global.State.Save();
             Display("Saved!");
         }
 
@@ -126,20 +127,13 @@ namespace ScraperHelper
             localSearchTermT.Text = config.LocalSearchTerm;
             sameDomainC.Checked = config.SameDomain;
             _browserService.Config = config;
+            Global.State=Global.State.Load();
             SetReqOnUI(config.RequestInDebug);
-            _browserService.LoadRequests();
-            PopulateRequestsGrid();
+            _requestOnDebug = config.RequestInDebug;
+            LoadAllResponses();
+            LoadScenario();
         }
-
-        void PopulateRequestsGrid()
-        {
-            // if (config.TargetedRequests != null)
-            //     foreach (var r in config.TargetedRequests)
-            //         requestsGrid.Rows.Add(r.Method, r.Url, r.ResourceType, r);
-            var requests = _browserService.AllRequests;
-            foreach (var r in requests)
-                    requestsGrid.Rows.Add(r.Request.Method, r.Request.Url, r.Request.ResourceType, r);
-        }
+        
 
         private async void Form1_FormClosing(object sender, FormClosingEventArgs e)
         {
@@ -164,6 +158,8 @@ namespace ScraperHelper
 
         private void clearToolStripMenuItem_Click(object sender, EventArgs e)
         {
+            Global.State.AllResponses.Clear();
+            Global.SaveState();
             requestsGrid.Rows.Clear();
             SaveConfig();
         }
@@ -180,6 +176,7 @@ namespace ScraperHelper
         private void SetReqOnUI(Request req)
         {
             if (req == null) return;
+            ResetFields();
             reqUrlT.Text = req.Url;
             httpMethodT.Text = req.Method == Method.Get ? "GET" : "POST";
             var headers = new StringBuilder();
@@ -187,18 +184,22 @@ namespace ScraperHelper
             var cookies = new StringBuilder();
             foreach (var c in req.Cookies) cookies.AppendLine($"{c.Key} : {c.Value}");
             var formData = new StringBuilder();
-            if (req.FormData != null) foreach (var f in req.FormData) formData.AppendLine($"{f.Key} : {f.Value}");
+            if (req.FormData != null)
+                foreach (var f in req.FormData)
+                    formData.AppendLine($"{f.Key} : {f.Value}");
             headersT.Text = headers.ToString();
             cookiesT.Text = cookies.ToString();
             formDataT.Text = formData.ToString();
-            if (!string.IsNullOrEmpty(req.FormBody)) 
+            if (!string.IsNullOrEmpty(req.FormBody))
                 formDataT.Text = req.FormBody.BeautifyIfJson();
             tabControl1.SelectedIndex = 1;
         }
+
         private void SetResponseOnUI(Response response)
         {
             var req = response.Request;
             if (req == null) return;
+            ResetFields();
             reqUrlT.Text = req.Url;
             httpMethodT.Text = req.Method == Method.Get ? "GET" : "POST";
             var headers = new StringBuilder();
@@ -206,7 +207,9 @@ namespace ScraperHelper
             var cookies = new StringBuilder();
             foreach (var c in req.Cookies) cookies.AppendLine($"{c.Key} : {c.Value}");
             var formData = new StringBuilder();
-            if (req.FormData != null) foreach (var f in req.FormData) formData.AppendLine($"{f.Key} : {f.Value}");
+            if (req.FormData != null)
+                foreach (var f in req.FormData)
+                    formData.AppendLine($"{f.Key} : {f.Value}");
             headersT.Text = headers.ToString();
             cookiesT.Text = cookies.ToString();
             formDataT.Text = formData.ToString();
@@ -250,11 +253,12 @@ namespace ScraperHelper
                 Headers = headers,
                 Cookies = cookies,
                 FormBody = reqBody,
-                FormData = formData
+                FormData = formData,
+                Number =_requestOnDebug.Number
             };
             return request;
         }
-        
+
         private async void execRequestButton_Click(object sender, EventArgs e)
         {
             Display("Requesting..");
@@ -265,9 +269,9 @@ namespace ScraperHelper
                 var result = await _httpService.Execute(req);
                 resultT.Text = result.body.BeautifyIfJson();
                 resultHeadersT.Text = result.headers.DictionaryToText();
-                var y=resultHeadersT.HighlightText(localSearchTermT.Text);
+                var y = resultHeadersT.HighlightText(localSearchTermT.Text);
                 howManyInHeadersL.Text = y.ToString();
-                var x=resultT.HighlightText(localSearchTermT.Text);
+                var x = resultT.HighlightText(localSearchTermT.Text);
                 howManyInBodyL.Text = x.ToString();
                 termExistL.Text = resultT.Text.Contains(localSearchTermT.Text) ? "Exist!" : "not there..";
                 Display("completed");
@@ -286,6 +290,7 @@ namespace ScraperHelper
                 Display("you need to specify a search term to optimize");
                 return;
             }
+
             Display("Start optimizing..");
             try
             {
@@ -314,7 +319,7 @@ namespace ScraperHelper
         private async void openOnBrowserButton_Click(object sender, EventArgs e)
         {
             // await _browserService.SetHtml(resultT.Text);
-            await File.WriteAllTextAsync("html.html",resultT.Text);
+            await File.WriteAllTextAsync("html.html", resultT.Text);
             var psi = new ProcessStartInfo
             {
                 FileName = "html.html",
@@ -323,23 +328,46 @@ namespace ScraperHelper
             Process.Start(psi);
         }
 
-        private async void getNeededRequestsButton_Click(object sender, EventArgs e)
+        private void GetNeededRequestsButton_Click(object sender, EventArgs e)
         {
-            var search = Clipboard.GetText();
-            if (string.IsNullOrEmpty(search)) return;
-            await _browserService.GetNeededRequests(search);
+           var responses=_requestsService.GetNeededRequests(GetRequestFromUi());
+           MarkRows(responses.Select(x=>x.Request.Number).ToList());
+        }
+
+        void MarkRows(List<int> targets)
+        {
+            LoadAllResponses();
+            
+            foreach (DataGridViewRow r in requestsGrid.Rows)
+            {
+                var response = (Response)r.Cells[3].Value;
+                if (targets.Contains(response.Request.Number))
+                {
+                    r.DefaultCellStyle.BackColor = Color.Green;
+                }
+                else
+                {
+                    r.Visible = !hideIrreleventReqCheckbox.Checked;
+                    r.DefaultCellStyle.BackColor = Color.White;
+                }
+            }
         }
 
         private void startNewCaptureButton_Click(object sender, EventArgs e)
         {
-            requestsGrid.Rows.Clear();
             SaveConfig();
+            Global.State.AllResponses.Clear();
+            Global.SaveState();
+            requestsGrid.Rows.Clear();
             _browserService.StartNewCapture();
         }
 
         private void addToFinalRequestsButton_Click(object sender, EventArgs e)
         {
-
+            var req = GetRequestFromUi();
+            Global.State.ScenarioRequests.Add(req);
+            Global.SaveState();
+            LoadScenario();
         }
 
         private void searchRequestsButton_Click(object sender, EventArgs e)
@@ -355,20 +383,22 @@ namespace ScraperHelper
                 var response = (Response)r.Cells[3].Value;
                 if (response.ContainKeyword(localSearchTermT.Text))
                 {
-                    r.DefaultCellStyle.BackColor=Color.Green;
-                }else if (response.Request.ContainKeyword(localSearchTermT.Text))
+                    r.DefaultCellStyle.BackColor = Color.Green;
+                }
+                else if (response.Request.ContainKeyword(localSearchTermT.Text))
                 {
-                    r.DefaultCellStyle.BackColor=Color.Yellow;
+                    r.DefaultCellStyle.BackColor = Color.Yellow;
                 }
                 else
                 {
                     r.Visible = !hideIrreleventReqCheckbox.Checked;
-                    r.DefaultCellStyle.BackColor=Color.White;
+                    r.DefaultCellStyle.BackColor = Color.White;
                 }
             }
-            var y=resultHeadersT.HighlightText(localSearchTermT.Text);
+
+            var y = resultHeadersT.HighlightText(localSearchTermT.Text);
             howManyInHeadersL.Text = y.ToString();
-            var x=resultT.HighlightText(localSearchTermT.Text);
+            var x = resultT.HighlightText(localSearchTermT.Text);
             howManyInBodyL.Text = x.ToString();
             headersT.HighlightText(localSearchTermT.Text);
             formDataT.HighlightText(localSearchTermT.Text);
@@ -380,19 +410,45 @@ namespace ScraperHelper
             _browserService.CaptureRequestsEnabled = false;
         }
 
-        private void allRequestsToolStripMenuItem_Click(object sender, EventArgs e)
+        private void LoadAllResponses()
         {
-
+            requestsGrid.Rows.Clear();
+            var responses = Global.State.AllResponses;
+            foreach (var r in responses)
+                requestsGrid.Rows.Add(r.Request.Method, r.Request.Url, r.Request.ResourceType, r,r.Request.Number);
         }
 
-        private void myScenarioToolStripMenuItem_Click(object sender, EventArgs e)
+        private void LoadScenario()
         {
-
+            scenarioGridView.Rows.Clear();
+            var requests = Global.State.ScenarioRequests;
+            foreach (var r in requests)
+                scenarioGridView.Rows.Add(r.Method, r.Url, r.ResourceType, r);
         }
 
-        private void addToScenarioToolStripMenuItem_Click(object sender, EventArgs e)
+        private void clearToolStripMenuItem1_Click(object sender, EventArgs e)
         {
+            Global.State.ScenarioRequests.Clear();
+            Global.SaveState();
+            scenarioGridView.Rows.Clear();
+        }
 
+        private void checkToolStripMenuItem1_Click(object sender, EventArgs e)
+        {
+            if (scenarioGridView.SelectedRows.Count < 1) return;
+            var req = (Request)scenarioGridView.SelectedRows[0].Cells[3].Value;
+            _requestOnDebug = req;
+            SetReqOnUI(req);
+            SaveConfig();
+        }
+
+        private void ResetFields()
+        {
+            cookiesT.Text = "";
+            headersT.Text = "";
+            formDataT.Text = "";
+            resultT.Text = "";
+            resultHeadersT.Text = "";
         }
     }
 }

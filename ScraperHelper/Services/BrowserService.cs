@@ -19,9 +19,9 @@ public class BrowserService
     public string SearchTerm;
     private string _lastXpath { get; set; }
     private readonly List<string> _allowedTypes = new() { "document", "fetch", "xhr" };
-    public List<Response> AllRequests = new();
     public bool CaptureAll { get; set; }
     public bool CaptureRequestsEnabled;
+    private int _requestNumber = 1;
     public EventHandler<Response> OnRequestCaptured { get; set; }
 
     public async Task StartBrowser(bool headless, string url)
@@ -33,6 +33,10 @@ public class BrowserService
         _browser = await _playwright.Chromium.LaunchPersistentContextAsync(userDataDir, new BrowserTypeLaunchPersistentContextOptions()
         {
             Headless = headless,
+            ViewportSize = ViewportSize.NoViewport
+            // ViewportSize = new ViewportSize() { Width = 2500, Height = 1200 },
+            // ScreenSize = new ScreenSize(){Width = 2500, Height = 1200}
+            //ViewportSize = new ViewportSize(){Width = 1900,Height = 1200}
             //  Args = new []{$"--disable-extensions-except={_path}/ext"} //$"--load-extension={_path}/ext", ,{_path}/ext2
         });
         //  var context = await _browser.NewContextAsync();
@@ -42,25 +46,14 @@ public class BrowserService
         _page.Response += OnPageOnResponse;
         await _page.GotoAsync(url);
     }
-
-    public async Task GetNeededRequests(string text)
-    {
-        foreach (var resp in AllRequests)
-        {
-            var t = JsonConvert.SerializeObject(resp.Headers);
-            var t2 = JsonConvert.SerializeObject(resp.Cookies);
-            if (t.Contains(text) || t2.Contains(text) || resp.Content.Contains(text))
-            {
-                OnRequestCaptured?.Invoke(this, resp);
-            }
-        }
-    }
+    
     
     public void StartNewCapture()
     {
-        AllRequests = new List<Response>();
-        AllRequests.Save();
+        Global.State.AllResponses= new List<Response>();
+        Global.State.AllResponses.Save();
         CaptureRequestsEnabled = true;
+        _requestNumber = 1;
     }
 
     private bool IsSameDomain(string url)
@@ -85,7 +78,9 @@ public class BrowserService
         if (!response.Ok && response.Status!=301 && response.Status!=302) 
             return;
         var resp = await response.Convert();
-        AllRequests.Add(resp);
+        resp.Request.Number = _requestNumber;
+        _requestNumber++;
+        Global.State.AllResponses.Add(resp);
         // if (CaptureAll)
         // {
         //     OnRequestCaptured?.Invoke(this, resp);
@@ -156,19 +151,10 @@ public class BrowserService
         m_GlobalHook.MouseDownExt += GlobalHookMouseDownExt;
     }
 
-    public void LoadRequests()
-    {
-        AllRequests=AllRequests.Load();
-    }
-    public void SaveRequests()
-    {
-        AllRequests.Save();
-    }
-
     public List<Request> SearchRequests(string text)
     {
         var requests = new List<Request>();
-        foreach (var resp in AllRequests)
+        foreach (var resp in  Global.State.AllResponses)
         {
             if (resp.ContainKeyword(text) || resp.Request.ContainKeyword(text))
             {

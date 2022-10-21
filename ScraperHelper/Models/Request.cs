@@ -7,6 +7,7 @@ namespace ScraperHelper.Models;
 
 public class Request
 {
+    public int Number { get; set; }
     public Method Method { get; set; }
     public string Url { get; set; }
     public string ResourceType { get; set; }
